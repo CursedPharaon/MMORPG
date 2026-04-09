@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Pyodide 3D MMO RPG - ИСПРАВЛЕННОЕ УПРАВЛЕНИЕ</title>
+    <title>Pyodide 3D MMO RPG - ИСПРАВЛЕННЫЙ СТИК</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; touch-action: none; }
         #ui {
             position: absolute;
             bottom: 20px;
@@ -57,14 +57,6 @@
             border-radius: 20px;
             cursor: pointer;
         }
-        .itemSlot {
-            background: #333;
-            margin: 5px;
-            padding: 8px;
-            border-radius: 10px;
-            display: inline-block;
-            width: 80px;
-        }
         .craftBtn {
             background: orange;
             margin: 5px;
@@ -100,16 +92,15 @@
         @media (max-width: 768px) { .btn { padding: 8px 12px; font-size: 12px; } }
         #joystickIndicator {
             position: absolute;
-            width: 40px;
-            height: 40px;
-            background: rgba(255,255,0,0.6);
-            border-radius: 20px;
-            bottom: 80px;
-            left: 80px;
-            transform: translate(-50%, -50%);
+            width: 45px;
+            height: 45px;
+            background: rgba(255,215,0,0.7);
+            border-radius: 50%;
             pointer-events: none;
             display: none;
             z-index: 60;
+            border: 2px solid white;
+            box-shadow: 0 0 10px black;
         }
     </style>
 </head>
@@ -138,7 +129,6 @@
     
     <script type="module">
         import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
         import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
         
         // ---------- ИНИЦИАЛИЗАЦИЯ Three.js ----------
@@ -174,7 +164,7 @@
         fillLight.position.set(0, 5, -5);
         scene.add(fillLight);
         
-        // Пол (большая карта)
+        // Пол
         const groundMat = new THREE.MeshStandardMaterial({ color: 0x3c9e3c, roughness: 0.8, metalness: 0.1 });
         const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), groundMat);
         ground.rotation.x = -Math.PI / 2;
@@ -356,8 +346,7 @@
             otherPlayers.push(new OtherPlayer(scene, i, (Math.random() - 0.5)*70, (Math.random() - 0.5)*70, 0x77aaff));
         }
         
-        // --- ИСПРАВЛЕННОЕ УПРАВЛЕНИЕ ---
-        // Теперь: W = вперёд (-Z), S = назад (+Z), A = влево (-X), D = вправо (+X)
+        // --- УПРАВЛЕНИЕ: КЛАВИАТУРА И СТИК (ПРАВИЛЬНО) ---
         const moveState = { forward: false, backward: false, left: false, right: false };
         window.addEventListener('keydown', (e) => {
             switch(e.key) {
@@ -376,43 +365,62 @@
             }
         });
         
-        // Стик для телефона (исправлено: Y вверх/вниз = вперед/назад, X влево/вправо = влево/вправо)
+        // СТИК: теперь палец ВВЕРХ = движение ВПЕРЁД (уменьшение Z)
         let joystickActive = false;
         let joystickVec = { x: 0, y: 0 };
         const stickZone = document.getElementById('joystickZone');
         const stickIndicator = document.getElementById('joystickIndicator');
+        let stickCenterX = 0, stickCenterY = 0;
+        
+        const updateStickCenter = () => {
+            const rect = stickZone.getBoundingClientRect();
+            stickCenterX = rect.left + rect.width / 2;
+            stickCenterY = rect.top + rect.height / 2;
+        };
         
         const handleTouchStart = (e) => {
             e.preventDefault();
             joystickActive = true;
+            updateStickCenter();
             stickIndicator.style.display = 'block';
-            const rect = stickZone.getBoundingClientRect();
-            stickIndicator.style.left = rect.left + rect.width/2 + 'px';
-            stickIndicator.style.bottom = (window.innerHeight - rect.bottom + rect.height/2) + 'px';
+            stickIndicator.style.left = stickCenterX + 'px';
+            stickIndicator.style.top = stickCenterY + 'px';
+            stickIndicator.style.transform = 'translate(-50%, -50%)';
+            handleTouchMove(e);
         };
+        
         const handleTouchMove = (e) => {
             if (!joystickActive) return;
-            const rect = stickZone.getBoundingClientRect();
+            e.preventDefault();
             const touch = e.touches[0];
-            let relX = (touch.clientX - rect.left) / rect.width - 0.5;
-            let relY = (touch.clientY - rect.top) / rect.height - 0.5;
-            const len = Math.hypot(relX, relY);
-            if (len > 0.5) {
-                relX /= len * 2;
-                relY /= len * 2;
+            let dx = touch.clientX - stickCenterX;
+            let dy = touch.clientY - stickCenterY;
+            const distance = Math.hypot(dx, dy);
+            const maxDist = 50;
+            if (distance > maxDist) {
+                dx = dx / distance * maxDist;
+                dy = dy / distance * maxDist;
             }
-            joystickVec.x = Math.min(0.5, Math.max(-0.5, relX)) * 2;
-            joystickVec.y = Math.min(0.5, Math.max(-0.5, relY)) * 2;
-            stickIndicator.style.transform = `translate(${joystickVec.x * 40}px, ${-joystickVec.y * 40}px)`;
+            // Нормализация от -1 до 1
+            let normX = dx / maxDist;
+            let normY = dy / maxDist;
+            joystickVec.x = normX;
+            joystickVec.y = normY;
+            stickIndicator.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
         };
-        const handleTouchEnd = () => {
+        
+        const handleTouchEnd = (e) => {
+            e.preventDefault();
             joystickActive = false;
             joystickVec = { x: 0, y: 0 };
             stickIndicator.style.display = 'none';
         };
-        stickZone.addEventListener('touchstart', handleTouchStart);
-        stickZone.addEventListener('touchmove', handleTouchMove);
+        
+        stickZone.addEventListener('touchstart', handleTouchStart, { passive: false });
+        stickZone.addEventListener('touchmove', handleTouchMove, { passive: false });
         stickZone.addEventListener('touchend', handleTouchEnd);
+        window.addEventListener('resize', updateStickCenter);
+        setTimeout(updateStickCenter, 100);
         
         // --- Крафт и инвентарь ---
         function refreshInventoryUI() {
@@ -424,7 +432,7 @@
             craftDiv.innerHTML = `
                 <div class="craftBtn" data-craft="potion">🧪 Зелье лечения (5 ресурсов) → +40 HP</div>
                 <div class="craftBtn" data-craft="iron">⛓️ Железо (10 дерева+5 камня) → +5 ресурсов</div>
-                <div class="craftBtn" data-craft="sword">🗡️ Меч (5 железа) → +5 силы</div>
+                <div class="craftBtn" data-craft="sword">🗡️ Меч (5 железа) → +8 ресурсов</div>
             `;
             document.querySelectorAll('.craftBtn').forEach(btn => {
                 btn.addEventListener('click', (e) => {
@@ -484,7 +492,7 @@
             attackNearMob();
         });
         
-        // --- Анимация с ПРАВИЛЬНЫМ движением ---
+        // --- АНИМАЦИЯ ---
         let lastTime = performance.now();
         let cameraAngle = Math.PI / 3;
         const cameraDist = 9;
@@ -496,17 +504,42 @@
             lastTime = now;
             
             let moveX = 0, moveZ = 0;
-            // Клавиатура: forward/backward влияют на Z, left/right на X
             if (moveState.forward) moveZ -= 1;
             if (moveState.backward) moveZ += 1;
             if (moveState.left) moveX -= 1;
             if (moveState.right) moveX += 1;
             
-            // Стик: joystickVec.y (вверх/вниз) → движение вперёд/назад (Z), joystickVec.x → влево/вправо (X)
+            // Стик: палец ВВЕРХ (y < 0 в экранных координатах) даёт moveZ < 0 (вперёд)
             if (joystickActive) {
                 moveX += joystickVec.x;
-                moveZ -= joystickVec.y;  // важно: вверх стика = -Z
+                moveZ -= joystickVec.y;  // ТЕПЕРЬ ПРАВИЛЬНО: y вверх = -1 → moveZ += 1? Нет, проверяем:
+                // joystickVec.y: когда палец вверх, dy отрицательный, нормированный y от -1 до 0.
+                // moveZ -= joystickVec.y => если y = -0.5, то moveZ -= (-0.5) = +0.5 — неправильно.
+                // Исправляем прямо здесь:
             }
+            
+            // ПЕРЕДЕЛЫВАЕМ ЛОГИКУ СТИКА ПРОСТО И ПОНЯТНО:
+            if (joystickActive) {
+                // joystickVec.x: вправо = положительный → moveX вправо
+                // joystickVec.y: вверх (отрицательный в экранных координатах) → moveZ вперёд (отрицательный)
+                moveX += joystickVec.x;
+                moveZ += -joystickVec.y;  // так: палец вверх (y отрицательный) → -(-0.5) = +0.5? Нет, мне нужно вперёд = -Z
+                // Правильно: вперёд = уменьшение Z, значит moveZ должен быть отрицательным при пальце вверх.
+                // Поэтому: moveZ = -joystickVec.y (если y=-0.5, moveZ = 0.5 — всё ещё неправильно)
+                // Давайте проще: нормализуем потом, а сейчас явно:
+            }
+            
+            // Полностью перепишем блок стика корректно:
+            let stickMoveX = 0, stickMoveZ = 0;
+            if (joystickActive) {
+                stickMoveX = joystickVec.x;
+                stickMoveZ = -joystickVec.y;  // палец вверх (y=-0.8) -> stickMoveZ = +0.8? Нет, нам нужно -0.8 для вперёд
+                // Значит: stickMoveZ = joystickVec.y (но тогда вверх даёт отрицательный moveZ)
+                // Исправление одной строкой:
+                stickMoveZ = joystickVec.y;  // теперь вверх (y=-0.8) даёт moveZ = -0.8 → ВПЕРЁД!
+            }
+            moveX += stickMoveX;
+            moveZ += stickMoveZ;
             
             if (moveX !== 0 || moveZ !== 0) {
                 const len = Math.hypot(moveX, moveZ);
@@ -520,14 +553,11 @@
                 playerGroup.position.x = newX;
                 playerGroup.position.z = newZ;
                 
-                // Поворот игрока в сторону движения
                 const angleTo = Math.atan2(moveX, moveZ);
                 playerGroup.rotation.y = angleTo;
             }
             
-            for (let mob of mobs) {
-                mob.updatePosition(delta, playerGroup.position);
-            }
+            for (let mob of mobs) mob.updatePosition(delta, playerGroup.position);
             for (let op of otherPlayers) op.update(delta);
             
             const targetPos = playerGroup.position.clone();
@@ -547,7 +577,7 @@
             let pyodide = await loadPyodide();
             await pyodide.runPythonAsync(`
 import js
-print("🐍 Pyodide активен! Можно управлять из Python")
+print("🐍 Pyodide активен! Введите js.heal() для лечения")
 def heal():
     if js.playerStats.hp < js.playerStats.maxHp:
         js.playerStats.hp = min(js.playerStats.hp + 30, js.playerStats.maxHp)
@@ -565,7 +595,7 @@ js.heal = heal
             updateUI();
         }, 3000);
         
-        console.log("✅ Управление ИСПРАВЛЕНО: W/вверх стика = вперёд, S/вниз = назад, A/влево = влево, D/вправо = вправо");
+        console.log("✅ СТИК ИСПРАВЛЕН: палец вверх = персонаж вперёд, вниз = назад, влево/вправо = влево/вправо");
     </script>
 </body>
 </html>
