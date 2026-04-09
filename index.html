@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Lineage-like RPG на Pyodide + Three.js</title>
+    <style>
+        body { margin: 0; overflow: hidden; font-family: 'Arial', sans-serif; }
+        #ui {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0,0,0,0.8);
+            color: gold;
+            padding: 15px;
+            border-radius: 10px;
+            z-index: 100;
+            font-size: 14px;
+            min-width: 250px;
+            backdrop-filter: blur(5px);
+            border: 1px solid #ffd700;
+        }
+        #buff-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 100;
+            display: flex;
+            gap: 10px;
+        }
+        .buff-icon {
+            width: 48px;
+            height: 48px;
+            background: #2a2a2a;
+            border: 2px solid #ffd700;
+            border-radius: 8px;
+            text-align: center;
+            line-height: 48px;
+            color: white;
+            font-size: 12px;
+            position: relative;
+        }
+        .buff-timer {
+            position: absolute;
+            bottom: 2px;
+            right: 4px;
+            font-size: 10px;
+            color: #ffd700;
+        }
+        #health-bar {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            width: 300px;
+            height: 20px;
+            background: #330000;
+            border: 2px solid #ff0000;
+            z-index: 100;
+        }
+        #health-fill {
+            width: 100%;
+            height: 100%;
+            background: #ff0000;
+            transition: width 0.3s;
+        }
+        .skill-btn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: linear-gradient(45deg, #ffd700, #ff8c00);
+            border: none;
+            color: black;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            z-index: 100;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="ui">
+        <div>⚔️ Уровень: <span id="level">1</span></div>
+        <div>❤️ HP: <span id="hp">100</span>/<span id="max-hp">100</span></div>
+        <div>🔮 MP: <span id="mp">50</span>/<span id="max-mp">50</span></div>
+        <div>💪 Сила: <span id="strength">10</span></div>
+        <div>🏃 Скорость: <span id="speed">100</span>%</div>
+    </div>
+    
+    <div id="buff-panel"></div>
+    <div id="health-bar"><div id="health-fill"></div></div>
+    <button class="skill-btn" onclick="applyBuff()">✨ Мощь Дракона (+50% урона)</button>
+    
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.128.0/build/three.module.js"
+            }
+        }
+    </script>
+    
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
+    <script type="module" src="three_renderer.js"></script>
+    
+    <script>
+        let pyodide;
+        let gameState = { hp: 100, maxHp: 100, mp: 50, maxMp: 50, level: 1, strength: 10, speed: 100 };
+        let activeBuffs = [];
+        
+        async function initPyodide() {
+            pyodide = await loadPyodide();
+            await pyodide.loadPackage(["micropip"]);
+            
+            // Загружаем нашу Python логику
+            const gameLogic = await fetch('game_logic.py').then(r => r.text());
+            await pyodide.runPythonAsync(gameLogic);
+            
+            console.log("✅ Pyodide загружен! Логика игры активна.");
+            
+            // Тестируем бафф систему
+            const result = pyodide.runPython("apply_buff('dragon_power', 30)");
+            console.log("Бафф применен:", result);
+        }
+        
+        window.applyBuff = async function() {
+            const buffResult = pyodide.runPython("apply_buff('dragon_power', 30)");
+            if (buffResult) {
+                // Получаем активные баффы
+                const buffs = pyodide.globals.get('active_buffs');
+                updateBuffUI(buffs);
+                
+                // Обновляем статы
+                const stats = pyodide.runPython("get_player_stats()");
+                updateStatsUI(stats);
+                
+                // Отправляем в Three.js эффект
+                if (window.threeRenderer) {
+                    window.threeRenderer.addBuffEffect();
+                }
+            }
+        };
+        
+        function updateBuffUI(buffs) {
+            const panel = document.getElementById('buff-panel');
+            panel.innerHTML = '';
+            for (let [name, data] of Object.entries(buffs)) {
+                const div = document.createElement('div');
+                div.className = 'buff-icon';
+                div.innerHTML = `${name}<span class="buff-timer">${Math.ceil(data.remaining)}с</span>`;
+                panel.appendChild(div);
+            }
+        }
+        
+        function updateStatsUI(stats) {
+            document.getElementById('hp').innerText = stats.hp;
+            document.getElementById('mp').innerText = stats.mp;
+            document.getElementById('strength').innerText = stats.strength;
+            document.getElementById('level').innerText = stats.level;
+            
+            const hpPercent = (stats.hp / stats.maxHp) * 100;
+            document.getElementById('health-fill').style.width = hpPercent + '%';
+        }
+        
+        // Периодически обновляем таймеры баффов
+        setInterval(() => {
+            if (pyodide) {
+                const buffs = pyodide.runPython("update_buffs()");
+                if (buffs) updateBuffUI(buffs);
+            }
+        }, 1000);
+        
+        initPyodide();
+    </script>
+</body>
+</html>
